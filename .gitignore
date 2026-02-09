@@ -1,0 +1,12 @@
+node_modules/
+dist/
+data/
+.claimguard/
+*.sqlite
+*.sqlite-journal
+*.sqlite-wal
+*.sqlite-shm
+.env
+.env.*
+.DS_Store
+.breadcrumbs.json
