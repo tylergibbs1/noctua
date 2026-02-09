@@ -18,8 +18,22 @@ program
   .option("--session <id>", "Resume a previous session by ID")
   .option("--debug", "Show debug panel")
   .action(async (opts: { model?: string; session?: string; debug?: boolean }) => {
+    // guard: API key
+    if (!process.env.ANTHROPIC_API_KEY) {
+      console.error("error: ANTHROPIC_API_KEY not set\n\nset it in your shell profile:\n  export ANTHROPIC_API_KEY=sk-ant-...\n\nor run: bun run setup");
+      process.exit(1);
+    }
+
     try {
-      getDb();
+      const db = getDb();
+
+      // guard: empty database
+      const row = db.query("SELECT count(*) as n FROM icd10_codes").get() as { n: number } | null;
+      if (!row || row.n === 0) {
+        console.error("error: no CMS data found — run claimguard sync first\n\nor run: bun run setup");
+        process.exit(1);
+      }
+
       const { waitUntilExit } = render(
         React.createElement(App, { model: opts.model, initialSessionId: opts.session, debug: opts.debug })
       );

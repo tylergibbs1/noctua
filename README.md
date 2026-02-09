@@ -1,62 +1,96 @@
-# ClaimGuard
+# claimguard
 
-Autonomous medical billing denial prediction agent. ClaimGuard analyzes medical claims against CMS/NCCI rules to identify potential denial risks before submission.
+catch denials before they happen
 
-## Features
+autonomous medical billing denial prediction agent — analyzes claims against CMS/NCCI rules to flag risks before submission
 
-- **Code Validation** — Verifies ICD-10 and CPT/HCPCS codes exist and are active
-- **PTP Edit Detection** — Checks all pairwise NCCI Procedure-to-Procedure edit conflicts
-- **MUE Enforcement** — Validates units against Medically Unlikely Edit limits
-- **Add-on Code Checks** — Ensures add-on codes have required primary codes
-- **Modifier Validation** — Validates modifier usage (59/X-modifiers, 25, 26/TC)
-- **Demographics Checks** — Flags age/sex inappropriate codes
-- **Risk Scoring** — 0-100 risk score with severity breakdown
+## what it does
 
-## Prerequisites
+- **code validation** — verifies ICD-10 and HCPCS codes exist and are active
+- **PTP edit detection** — checks all pairwise NCCI procedure-to-procedure edit conflicts
+- **MUE enforcement** — validates units against medically unlikely edit limits
+- **add-on code checks** — ensures add-on codes have required primary codes
+- **modifier validation** — validates modifier usage (59/X-modifiers, 25, 26/TC)
+- **demographics checks** — flags age/sex inappropriate codes
+- **risk scoring** — 0-100 risk score with severity breakdown
 
-- [Bun](https://bun.sh) v1.0+
-- An Anthropic API key (`ANTHROPIC_API_KEY` env var)
+## prerequisites
 
-## Setup
+- [bun](https://bun.sh) v1.0+
+- anthropic API key (`ANTHROPIC_API_KEY` env var)
+
+## setup
+
+```bash
+git clone https://github.com/tylergibbs1/claimguard.git
+cd claimguard
+export ANTHROPIC_API_KEY=sk-ant-...
+bun run setup
+```
+
+that's it — `bun run setup` installs deps, links the `claimguard` command globally, and syncs CMS data
+
+### manual setup
 
 ```bash
 bun install
-bun run sync --mock    # Seed the rules database with mock data
+bun link                         # makes claimguard available globally
+claimguard sync                  # download CMS rules data
 ```
 
-## Usage
+## usage
 
-### Analyze a Claim (Interactive TUI)
+### interactive TUI
 
 ```bash
-bun run dev analyze examples/sample-claim.json
+claimguard                       # start the TUI
+claimguard --session <id>        # resume a previous session
+claimguard --debug               # show debug panel
+claimguard --model <model-id>    # use a specific claude model
 ```
 
-### Analyze a Claim (JSON output)
+### slash commands
+
+| command    | description              |
+|------------|--------------------------|
+| `/help`    | list available commands   |
+| `/new`     | start a fresh session    |
+| `/session` | show current session id  |
+| `exit`     | quit claimguard          |
+
+### keyboard shortcuts
+
+| key              | action                  |
+|------------------|-------------------------|
+| `enter`          | submit query            |
+| `shift+enter`    | insert newline          |
+| `esc`            | interrupt running query |
+| `up/down`        | navigate input history  |
+| `ctrl+a / ctrl+e`| line start / end       |
+| `opt+left/right` | word navigation         |
+| `opt+backspace`  | delete word backward    |
+
+### analyze a claim (JSON output)
 
 ```bash
-bun run dev analyze examples/sample-claim.json --batch
+claimguard analyze examples/sample-claim.json
+claimguard analyze examples/sample-claim.json --model claude-opus-4-6
 ```
 
-### Run Evaluation Suite
+### run evaluation suite
 
 ```bash
-bun run eval
+claimguard eval
 ```
 
-### Sync CMS Data
+### sync CMS data
 
 ```bash
-# Use mock data
-bun run sync --mock
-
-# Download from CMS (when available)
-bun run sync --dataset icd10,hcpcs,ptp,mue,addon
+claimguard sync                                    # sync all datasets
+claimguard sync --dataset icd10,hcpcs,ptp,mue,addon  # sync specific datasets
 ```
 
-## Claim Format
-
-Claims are JSON files with this structure:
+## claim format
 
 ```json
 {
@@ -79,13 +113,27 @@ Claims are JSON files with this structure:
 }
 ```
 
-## Architecture
+## architecture
 
-- **Agent SDK** — Claude Agent SDK (V1 `query()` API) with custom MCP tools
-- **Database** — `bun:sqlite` with WAL mode for CMS rules lookup
-- **TUI** — Ink (React for terminal) with real-time progress
-- **Tools** — 8 MCP tools for code validation, bundling checks, and demographics
+- **agent** — claude agent SDK (V1 `query()` API) with 8 MCP tools served via `createSdkMcpServer`
+- **database** — `bun:sqlite` with WAL mode for CMS rules lookup
+- **TUI** — ink (react 19) with branded theme, markdown rendering, streaming tool events
+- **sync** — downloads and parses CMS data files (ICD-10, HCPCS Level II, PTP edits, MUE, add-on codes)
+- **evals** — evaluation suite with automated scoring against real CMS data
 
-## License
+## tools
+
+| tool                 | description                                |
+|----------------------|--------------------------------------------|
+| `lookup_icd10`       | validate diagnosis codes                   |
+| `lookup_hcpcs`       | validate procedure codes                   |
+| `validate_code_pair` | check a single PTP edit pair               |
+| `check_bundling`     | scan all PTP conflicts for a code          |
+| `check_mue`          | check medically unlikely edit limits       |
+| `check_addon`        | verify add-on code requirements            |
+| `check_modifier`     | review modifier usage                      |
+| `check_age_sex`      | check demographic appropriateness          |
+
+## license
 
 MIT
