@@ -254,7 +254,7 @@ export function App({ model, initialSessionId, debug }: Props) {
       </Box>
 
       {/* debug panel */}
-      <DebugPanel show={debug} />
+      <DebugPanel show={debug === true} />
     </Box>
   );
 }

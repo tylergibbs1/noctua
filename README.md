@@ -4,6 +4,10 @@ catch denials before they happen
 
 autonomous medical billing denial prediction agent — analyzes claims against CMS/NCCI rules to flag risks before submission
 
+<p align="center">
+  <img src="public/demo.gif" alt="claimguard demo" width="800">
+</p>
+
 ## what it does
 
 - **code validation** — verifies ICD-10 and HCPCS codes exist and are active
