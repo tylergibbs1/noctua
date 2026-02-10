@@ -4,9 +4,19 @@ catch denials before they happen
 
 autonomous medical billing denial prediction agent — analyzes claims against CMS/NCCI rules to flag risks before submission
 
+**100% local** — all CMS rules data and claim analysis run on your machine, no PHI leaves your environment, HIPAA-safe by design
+
 <p align="center">
   <img src="public/demo.gif" alt="claimguard demo" width="800">
 </p>
+
+## why local
+
+medical billing data is PHI — it shouldn't be uploaded to third-party SaaS platforms for compliance checks. claimguard keeps everything on your machine:
+
+- **CMS rules database** stored locally in SQLite — no external API calls for code lookups
+- **claim data never leaves your environment** — the only external call is to the Anthropic API for reasoning, and you control what's sent
+- **no accounts, no cloud, no vendor lock-in** — clone it, run it, own it
 
 ## what it does
 
