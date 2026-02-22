@@ -70,6 +70,7 @@ function getOrCreateSession(callbacks: QueryCallbacks): Session {
 		maxTurns: 5000,
 		modelSettings: {
 			maxTokens: 128000,
+			promptCacheKey: "noctua-session",
 		},
 		hooks: {
 			beforeToolCall: ({ toolCall }) => {
@@ -192,8 +193,17 @@ export async function runQuery(
 
 		// Await the final RunResult for usage
 		const runResult = await sess.result;
-		const finalOutput = runResult.output ?? resultText;
+		let finalOutput = runResult.output ?? resultText;
 		const durationMs = Date.now() - startTime;
+
+		// Detect silent exit — model hit token limit without producing a text response
+		if (!finalOutput.trim() && runResult.finishReason === "length") {
+			finalOutput =
+				"ran out of context space before finishing — try `/new` to start a fresh session, or ask a more targeted question";
+		} else if (!finalOutput.trim()) {
+			finalOutput =
+				"completed tool calls but produced no text response — the task may be done, or try rephrasing";
+		}
 
 		let usage: UsageMetrics | undefined;
 		if (runResult.usage) {

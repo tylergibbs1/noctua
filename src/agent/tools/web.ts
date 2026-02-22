@@ -148,10 +148,10 @@ export const webFillTool = tool({
 	execute: async (_ctx, { selector, value, slowly, submit }) => {
 		const page = await getPage();
 		if (slowly) {
-			await page.click(selector, { timeout: 10000 });
+			await page.click(selector, { timeout: 5000 });
 			await page.keyboard.type(value, { delay: 50 });
 		} else {
-			await page.fill(selector, value, { timeout: 10000 });
+			await page.fill(selector, value, { timeout: 5000 });
 		}
 		if (submit) await page.keyboard.press("Enter");
 		return `filled ${selector} with "${truncate(value, 60)}"`;
@@ -218,11 +218,11 @@ export const webFillFormTool = tool({
 		const results: string[] = [];
 		for (const field of fields) {
 			try {
-				await page.fill(field.selector, field.value, { timeout: 10000 });
+				await page.fill(field.selector, field.value, { timeout: 5000 });
 				results.push(`${field.selector} = "${truncate(field.value, 30)}"`);
 			} catch (err) {
 				const msg = err instanceof Error ? err.message : String(err);
-				results.push(`${field.selector} FAILED: ${msg}`);
+				results.push(`${field.selector} FAILED — field may be disabled or hidden. use web_evaluate to check element state`);
 			}
 		}
 		if (submit) await page.keyboard.press("Enter");

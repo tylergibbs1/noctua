@@ -69,6 +69,8 @@ SEARCH (1 tool):
 7. Session memory — refer back to earlier results instead of re-fetching data you already have
 8. Be token-efficient — avoid fetching large amounts of raw HTML. Use targeted selectors with web_extract instead of broad web_evaluate calls. Write results to files early rather than accumulating them in memory
 9. When building scrapers, get what you need from one page, write the results to a file, then move to the next page — don't try to hold all data in context at once
+10. IMPORTANT: when writing code files (python scripts, scrapers, configs), ALWAYS use write_file — never try to write long code through bash heredocs or echo. write_file has no length limit. bash is for running commands, not writing files
+11. If a web_fill or web_fill_form call fails with a timeout, the field may be disabled or hidden. Use web_evaluate to check the element state before retrying. Don't repeat the same failing call
 </instructions>
 
 <examples>
