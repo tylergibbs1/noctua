@@ -37,7 +37,13 @@ function formatStats(usage?: UsageMetrics): string {
 		const tps = usage.totalTokens / (usage.durationMs / 1000);
 		parts.push(`(${tps.toFixed(1)} tok/s)`);
 	}
-	if (usage.totalCostUsd) parts.push(`$${usage.totalCostUsd.toFixed(4)}`);
+	if (usage.cacheReadInputTokens > 0) {
+		const pct = Math.round(
+			(usage.cacheReadInputTokens / usage.inputTokens) * 100,
+		);
+		parts.push(`${pct}% cached`);
+	}
+	if (usage.totalCostUsd > 0) parts.push(`$${usage.totalCostUsd.toFixed(4)}`);
 	return parts.join(" \u00b7 ");
 }
 

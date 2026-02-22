@@ -1,7 +1,7 @@
-import { Agent, createSession, type Session } from "stratus-sdk";
+import { createSession, createCostEstimator, type Session } from "stratus-sdk";
 import { AzureResponsesModel } from "stratus-sdk";
 import type { StreamEvent } from "stratus-sdk";
-import { SYSTEM_PROMPT } from "./system-prompt.js";
+import { createSystemPrompt } from "./system-prompt.js";
 import { createSubagents, setSubagentEventCallback } from "./subagents.js";
 import { readFileTool, writeFileTool, listDirectoryTool, globFilesTool } from "./tools/files.js";
 import { bashTool } from "./tools/bash.js";
@@ -40,9 +40,34 @@ export type QueryResult = {
 	usage?: UsageMetrics;
 };
 
+// ─── Context ───────────────────────────────────────────────────────────────
+
+export interface NoctuaContext {
+	cwd: string;
+	platform: string;
+	deployment: string;
+}
+
+function buildContext(): NoctuaContext {
+	return {
+		cwd: process.cwd(),
+		platform: process.platform,
+		deployment: process.env.AZURE_DEPLOYMENT ?? "gpt-5.2-codex",
+	};
+}
+
+// ─── Cost estimator ────────────────────────────────────────────────────────
+
+// gpt-5.2-codex pricing (per 1k tokens)
+const costEstimator = createCostEstimator({
+	inputTokenCostPer1k: 0.002,
+	outputTokenCostPer1k: 0.008,
+	cachedInputTokenCostPer1k: 0.001,
+});
+
 // ─── Persistent session ────────────────────────────────────────────────────
 
-let session: Session | null = null;
+let session: Session<NoctuaContext> | null = null;
 
 function createModel(): AzureResponsesModel {
 	const endpoint = process.env.AZURE_ENDPOINT;
@@ -60,7 +85,7 @@ function createModel(): AzureResponsesModel {
 	});
 }
 
-function getOrCreateSession(callbacks: QueryCallbacks): Session {
+function getOrCreateSession(callbacks: QueryCallbacks): Session<NoctuaContext> {
 	if (session) return session;
 
 	const model = createModel();
@@ -74,10 +99,10 @@ function getOrCreateSession(callbacks: QueryCallbacks): Session {
 	// Track tool timing for hooks
 	const toolTimers = new Map<string, number>();
 
-	// Orchestrator has direct tools for simple tasks + subagents for heavy lifting
-	session = createSession({
+	session = createSession<NoctuaContext>({
 		model,
-		instructions: SYSTEM_PROMPT,
+		// Dynamic instructions — inject runtime context
+		instructions: (ctx: NoctuaContext) => createSystemPrompt(ctx),
 		tools: [
 			bashTool,
 			readFileTool,
@@ -87,7 +112,9 @@ function getOrCreateSession(callbacks: QueryCallbacks): Session {
 			grepTool,
 		],
 		subagents: [scraperSubagent, coderSubagent],
+		context: buildContext(),
 		maxTurns: 5000,
+		costEstimator,
 		modelSettings: {
 			maxTokens: 128000,
 			promptCacheKey: "noctua-orchestrator",
@@ -131,7 +158,6 @@ function getOrCreateSession(callbacks: QueryCallbacks): Session {
 					duration: Date.now() - startTime,
 				});
 			},
-
 		},
 	});
 
@@ -232,7 +258,7 @@ export async function runQuery(
 				durationMs,
 				cacheReadInputTokens: u.cacheReadTokens ?? 0,
 				cacheCreationInputTokens: u.cacheCreationTokens ?? 0,
-				totalCostUsd: runResult.totalCostUsd ?? 0,
+				totalCostUsd: runResult.totalCostUsd,
 			};
 		}
 
@@ -241,6 +267,8 @@ export async function runQuery(
 		if (usage) {
 			logger.info("query complete", {
 				tokens: usage.totalTokens,
+				cached: usage.cacheReadInputTokens,
+				cost: `$${usage.totalCostUsd.toFixed(4)}`,
 				duration: `${Math.round(usage.durationMs / 1000)}s`,
 				turns: runResult.numTurns,
 				messages: sess.messages.length,
