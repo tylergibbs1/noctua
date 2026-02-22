@@ -4,8 +4,8 @@ import Spinner from "ink-spinner";
 import { theme } from "../theme.js";
 
 const TOOL_LABELS: Record<string, string> = {
-	delegate_scraping: "scraper",
-	delegate_coding: "coder",
+	delegate_scraping: "subagent: scraper",
+	delegate_coding: "subagent: coder",
 	web_crawl: "crawl",
 	web_navigate: "navigate",
 	web_wait: "wait",
