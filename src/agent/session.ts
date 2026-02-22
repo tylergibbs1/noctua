@@ -132,23 +132,6 @@ function getOrCreateSession(callbacks: QueryCallbacks): Session {
 				});
 			},
 
-			onSubagentStart: ({ subagent: sa }) => {
-				callbacks.onToolStart?.({
-					type: "tool_start",
-					tool: sa.toolName,
-					args: {},
-				});
-			},
-
-			onSubagentStop: ({ subagent: sa, result }) => {
-				callbacks.onToolEnd?.({
-					type: "tool_end",
-					tool: sa.toolName,
-					args: {},
-					result: result.slice(0, 200),
-					duration: 0,
-				});
-			},
 		},
 	});
 
