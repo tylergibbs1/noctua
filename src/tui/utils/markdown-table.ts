@@ -69,12 +69,25 @@ export function renderBoxTable(headers: string[], rows: string[][]): string {
     }
   }
 
-  // Cap columns so the table fits the terminal
+  // Cap columns so the table fits the terminal — proportional shrink
   const totalWidth = colWidths.reduce((a, b) => a + b, 0);
   if (totalWidth > maxTotalContent) {
-    const maxCol = Math.max(12, Math.floor(maxTotalContent / headers.length));
+    // First pass: shrink proportionally, with a minimum of header length or 8
+    const ratio = maxTotalContent / totalWidth;
     for (let i = 0; i < colWidths.length; i++) {
-      colWidths[i] = Math.min(colWidths[i]!, maxCol);
+      const minW = Math.max(8, headers[i]!.length);
+      colWidths[i] = Math.max(minW, Math.floor(colWidths[i]! * ratio));
+    }
+
+    // Second pass: if still over, hard-cap the widest columns
+    let total = colWidths.reduce((a, b) => a + b, 0);
+    while (total > maxTotalContent) {
+      let widestIdx = 0;
+      for (let i = 1; i < colWidths.length; i++) {
+        if (colWidths[i]! > colWidths[widestIdx]!) widestIdx = i;
+      }
+      colWidths[widestIdx] = colWidths[widestIdx]! - 1;
+      total--;
     }
   }
 
