@@ -206,8 +206,17 @@ export function App({ debug }: Props) {
 				</Box>
 			)}
 
-			{/* working indicator */}
-			{isProcessing && <WorkingIndicator state={workingState} />}
+			{/* working indicator — hide when a subagent is active (it has its own spinner) */}
+			{isProcessing && !history.some(
+				(item) =>
+					item.status === "processing" &&
+					item.events.some(
+						(de) =>
+							!de.completed &&
+							de.event.type === "tool_start" &&
+							(de.event.tool === "delegate_scraping" || de.event.tool === "delegate_coding"),
+					),
+			) && <WorkingIndicator state={workingState} />}
 
 			{/* input */}
 			<Box marginTop={1}>
