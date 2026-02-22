@@ -1,153 +1,94 @@
-# claimguard
+# noctua
 
-catch denials before they happen
-
-autonomous medical billing denial prediction agent — analyzes claims against CMS/NCCI rules to flag risks before submission
-
-**100% local** — all CMS rules data and claim analysis run on your machine, no PHI leaves your environment, HIPAA-safe by design
-
-<p align="center">
-  <img src="public/demo.gif" alt="claimguard demo" width="800">
-</p>
-
-## why local
-
-medical billing data is PHI — it shouldn't be uploaded to third-party SaaS platforms for compliance checks. claimguard keeps everything on your machine:
-
-- **CMS rules database** stored locally in SQLite — no external API calls for code lookups
-- **claim data never leaves your environment** — the only external call is to the Anthropic API for reasoning, and you control what's sent
-- **no accounts, no cloud, no vendor lock-in** — clone it, run it, own it
-
-## what it does
-
-- **code validation** — verifies ICD-10 and HCPCS codes exist and are active
-- **PTP edit detection** — checks all pairwise NCCI procedure-to-procedure edit conflicts
-- **MUE enforcement** — validates units against medically unlikely edit limits
-- **add-on code checks** — ensures add-on codes have required primary codes
-- **modifier validation** — validates modifier usage (59/X-modifiers, 25, 26/TC)
-- **demographics checks** — flags age/sex inappropriate codes
-- **risk scoring** — 0-100 risk score with severity breakdown
-
-## prerequisites
-
-- [bun](https://bun.sh) v1.0+
-- anthropic API key (`ANTHROPIC_API_KEY` env var)
+sees everything — AI-powered scraper and data acquisition agent powered by [stratus sdk](https://github.com/tylergibbs1/stratus) and azure openai (gpt-5.2-codex)
 
 ## setup
 
 ```bash
-git clone https://github.com/tylergibbs1/claimguard.git
-cd claimguard
-export ANTHROPIC_API_KEY=sk-ant-...
-bun run setup
+git clone https://github.com/tylergibbs1/noctua.git
+cd noctua
+bun install
+bunx playwright install chromium
+pip install crawl4ai && crawl4ai-setup   # optional, for web_crawl tool
 ```
 
-that's it — `bun run setup` installs deps, links the `claimguard` command globally, and syncs CMS data
+set your azure credentials in `.env`:
 
-### manual setup
-
-```bash
-bun install
-bun link                         # makes claimguard available globally
-claimguard sync                  # download CMS rules data
+```
+AZURE_ENDPOINT=https://your-resource.cognitiveservices.azure.com
+AZURE_API_KEY=your-key
+AZURE_DEPLOYMENT=gpt-5.2-codex
 ```
 
 ## usage
 
-### interactive TUI
-
 ```bash
-claimguard                       # start the TUI
-claimguard --session <id>        # resume a previous session
-claimguard --debug               # show debug panel
-claimguard --model <model-id>    # use a specific claude model
+bun run dev                  # start the TUI (browser visible by default)
+bun run dev -- --headless    # run browser in headless mode
+bun run dev -- --debug       # show debug panel
 ```
 
-### slash commands
+### commands
 
-| command    | description              |
-|------------|--------------------------|
-| `/help`    | list available commands   |
-| `/new`     | start a fresh session    |
-| `/session` | show current session id  |
-| `exit`     | quit claimguard          |
-
-### keyboard shortcuts
-
-| key              | action                  |
-|------------------|-------------------------|
-| `enter`          | submit query            |
-| `shift+enter`    | insert newline          |
-| `esc`            | interrupt running query |
-| `up/down`        | navigate input history  |
-| `ctrl+a / ctrl+e`| line start / end       |
-| `opt+left/right` | word navigation         |
-| `opt+backspace`  | delete word backward    |
-
-### analyze a claim (JSON output)
-
-```bash
-claimguard analyze examples/sample-claim.json
-claimguard analyze examples/sample-claim.json --model claude-opus-4-6
-```
-
-### run evaluation suite
-
-```bash
-claimguard eval
-```
-
-### sync CMS data
-
-```bash
-claimguard sync                                    # sync all datasets
-claimguard sync --dataset icd10,hcpcs,ptp,mue,addon  # sync specific datasets
-```
-
-## claim format
-
-```json
-{
-  "claimId": "CLM-001",
-  "dateOfService": "2024-06-15",
-  "patient": {
-    "id": "P001",
-    "dateOfBirth": "1975-03-20",
-    "sex": "M"
-  },
-  "provider": { "type": "practitioner" },
-  "lineItems": [
-    {
-      "cpt": "99214",
-      "modifiers": [],
-      "icd10": ["E11.9", "I10"],
-      "units": 1
-    }
-  ]
-}
-```
-
-## architecture
-
-- **agent** — claude agent SDK (V1 `query()` API) with 8 MCP tools served via `createSdkMcpServer`
-- **database** — `bun:sqlite` with WAL mode for CMS rules lookup
-- **TUI** — ink (react 19) with branded theme, markdown rendering, streaming tool events
-- **sync** — downloads and parses CMS data files (ICD-10, HCPCS Level II, PTP edits, MUE, add-on codes)
-- **evals** — evaluation suite with automated scoring against real CMS data
+| command  | description             |
+|----------|-------------------------|
+| `/new`   | start fresh session     |
+| `/help`  | show help               |
+| `exit`   | quit                    |
+| `ESC`    | interrupt current query |
 
 ## tools
 
-| tool                 | description                                |
-|----------------------|--------------------------------------------|
-| `lookup_icd10`       | validate diagnosis codes                   |
-| `lookup_hcpcs`       | validate procedure codes                   |
-| `validate_code_pair` | check a single PTP edit pair               |
-| `check_bundling`     | scan all PTP conflicts for a code          |
-| `check_mue`          | check medically unlikely edit limits       |
-| `check_addon`        | verify add-on code requirements            |
-| `check_modifier`     | review modifier usage                      |
-| `check_age_sex`      | check demographic appropriateness          |
+24 tools across 4 categories:
 
-## license
+### web (17)
 
-MIT
+| tool | purpose |
+|------|---------|
+| `web_crawl` | fetch URL as clean LLM-friendly markdown (crawl4ai) |
+| `web_navigate` | go to URL / back / forward / reload in persistent browser |
+| `web_wait` | wait for text, selector, or time |
+| `web_click` | click element by CSS selector |
+| `web_hover` | hover to reveal menus, tooltips |
+| `web_fill` | fill single input (instant or character-by-character) |
+| `web_fill_form` | fill multiple form fields in one call |
+| `web_press_key` | press keyboard key or shortcut |
+| `web_select_option` | select dropdown options |
+| `web_file_upload` | upload files to file input |
+| `web_extract` | extract text/attributes by CSS selector |
+| `web_snapshot` | accessibility tree snapshot |
+| `web_screenshot` | save screenshot to file |
+| `web_evaluate` | run JavaScript in page context |
+| `web_handle_dialog` | accept/dismiss alert/confirm/prompt |
+| `web_tabs` | manage browser tabs |
+| `web_close` | close the browser |
+
+### shell (1)
+
+| tool | purpose |
+|------|---------|
+| `bash` | run any command — curl, jq, python3, node, awk, pipes |
+
+### files (5)
+
+| tool | purpose |
+|------|---------|
+| `read_file` | read file contents |
+| `write_file` | create/overwrite file |
+| `edit_file` | find and replace in file |
+| `list_directory` | list directory with sizes |
+| `glob_files` | find files by glob pattern |
+
+### search (1)
+
+| tool | purpose |
+|------|---------|
+| `grep` | regex search across files |
+
+## architecture
+
+- **TUI**: react/ink terminal interface with markdown rendering, tool event display, input history
+- **agent**: stratus sdk `Session` with multi-turn memory, hooks for tool callbacks
+- **model**: azure responses api via `AzureResponsesModel` (gpt-5.2-codex, 272k context, 128k max output)
+- **browser**: playwright chromium, headed by default, lazy-launched on first web tool call
+- **crawl**: crawl4ai CLI for clean markdown extraction

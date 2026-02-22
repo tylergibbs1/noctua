@@ -109,7 +109,7 @@ export function WorkingIndicator({ state }: WorkingIndicatorProps) {
       <Text color={theme.accent.primary}>
         <Spinner type="dots" />
       </Text>
-      <Text color={theme.accent.primary}> </Text>
+      <Text color={theme.accent.primary}>{'  '}</Text>
       <ShineText text={statusWord} color={theme.accent.primary} shineColor={theme.fg.primary} />
       <Text color={theme.fg.muted}> (</Text>
       <Text color={theme.fg.muted} bold>esc</Text>

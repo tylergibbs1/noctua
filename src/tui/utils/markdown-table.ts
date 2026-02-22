@@ -55,14 +55,34 @@ export function parseMarkdownTable(tableText: string): { headers: string[]; rows
 }
 
 export function renderBoxTable(headers: string[], rows: string[][]): string {
+  const termWidth = process.stdout.columns || 120;
+  // Reserve space for borders: each col has "| " + " " padding = 3 chars, plus final "|"
+  const borderOverhead = headers.length * 3 + 1;
+  const maxTotalContent = termWidth - borderOverhead;
+
   const colWidths: number[] = headers.map(h => h.length);
   for (const row of rows) {
     for (let i = 0; i < row.length; i++) {
       if (i < colWidths.length) {
-        colWidths[i] = Math.max(colWidths[i], row[i].length);
+        colWidths[i] = Math.max(colWidths[i]!, row[i]!.length);
       }
     }
   }
+
+  // Cap columns so the table fits the terminal
+  const totalWidth = colWidths.reduce((a, b) => a + b, 0);
+  if (totalWidth > maxTotalContent) {
+    const maxCol = Math.max(12, Math.floor(maxTotalContent / headers.length));
+    for (let i = 0; i < colWidths.length; i++) {
+      colWidths[i] = Math.min(colWidths[i]!, maxCol);
+    }
+  }
+
+  // Truncate cell values to fit column widths
+  const truncCell = (value: string, width: number): string => {
+    if (value.length <= width) return value;
+    return value.slice(0, width - 1) + '\u2026';
+  };
 
   const alignRight: boolean[] = headers.map((_, colIndex) => {
     let numericCount = 0;
@@ -86,7 +106,7 @@ export function renderBoxTable(headers: string[], rows: string[][]): string {
 
   lines.push(
     BOX.vertical +
-    headers.map((h, i) => ` ${padCell(h, colWidths[i], false)} `).join(BOX.vertical) +
+    headers.map((h, i) => ` ${padCell(truncCell(h, colWidths[i]!), colWidths[i]!, false)} `).join(BOX.vertical) +
     BOX.vertical
   );
 
@@ -100,8 +120,8 @@ export function renderBoxTable(headers: string[], rows: string[][]): string {
     lines.push(
       BOX.vertical +
       colWidths.map((w, i) => {
-        const value = row[i] || '';
-        return ` ${padCell(value, w, alignRight[i])} `;
+        const value = truncCell(row[i] || '', w);
+        return ` ${padCell(value, w, alignRight[i]!)} `;
       }).join(BOX.vertical) +
       BOX.vertical
     );

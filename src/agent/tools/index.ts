@@ -1,30 +1,62 @@
-import { lookupIcd10Tool } from "./lookup-icd10.js";
-import { lookupHcpcsTool } from "./lookup-hcpcs.js";
-import { validateCodePairTool } from "./validate-code-pair.js";
-import { checkBundlingTool } from "./check-bundling.js";
-import { checkMueTool } from "./check-mue.js";
-import { checkAddonTool } from "./check-addon.js";
-import { checkModifierTool } from "./check-modifier.js";
-import { checkAgeSexTool } from "./check-age-sex.js";
+import {
+	webNavigateTool,
+	webWaitTool,
+	webClickTool,
+	webHoverTool,
+	webFillTool,
+	webFillFormTool,
+	webPressKeyTool,
+	webSelectOptionTool,
+	webFileUploadTool,
+	webExtractTool,
+	webSnapshotTool,
+	webScreenshotTool,
+	webEvaluateTool,
+	webHandleDialogTool,
+	webTabsTool,
+	webCloseTool,
+} from "./web.js";
+import { bashTool } from "./bash.js";
+import {
+	readFileTool,
+	writeFileTool,
+	editFileTool,
+	listDirectoryTool,
+	globFilesTool,
+} from "./files.js";
+import { grepTool } from "./grep.js";
+import { webCrawlTool } from "./crawl.js";
 
 export const allTools = [
-  lookupIcd10Tool,
-  lookupHcpcsTool,
-  validateCodePairTool,
-  checkBundlingTool,
-  checkMueTool,
-  checkAddonTool,
-  checkModifierTool,
-  checkAgeSexTool,
+	// web — reading
+	webCrawlTool,
+	webNavigateTool,
+	webWaitTool,
+	// web — interaction
+	webClickTool,
+	webHoverTool,
+	webFillTool,
+	webFillFormTool,
+	webPressKeyTool,
+	webSelectOptionTool,
+	webFileUploadTool,
+	// web — extraction
+	webExtractTool,
+	webSnapshotTool,
+	webScreenshotTool,
+	webEvaluateTool,
+	// web — management
+	webHandleDialogTool,
+	webTabsTool,
+	webCloseTool,
+	// shell
+	bashTool,
+	// files
+	readFileTool,
+	writeFileTool,
+	editFileTool,
+	listDirectoryTool,
+	globFilesTool,
+	// search
+	grepTool,
 ];
-
-export {
-  lookupIcd10Tool,
-  lookupHcpcsTool,
-  validateCodePairTool,
-  checkBundlingTool,
-  checkMueTool,
-  checkAddonTool,
-  checkModifierTool,
-  checkAgeSexTool,
-};

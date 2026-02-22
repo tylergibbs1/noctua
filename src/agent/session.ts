@@ -1,225 +1,229 @@
-import { query, createSdkMcpServer } from "@anthropic-ai/claude-agent-sdk";
+import { createSession, type Session } from "stratus-sdk";
+import { AzureResponsesModel } from "stratus-sdk";
+import type { StreamEvent } from "stratus-sdk";
 import { SYSTEM_PROMPT } from "./system-prompt.js";
 import { allTools } from "./tools/index.js";
-import { getDb } from "../db/index.js";
 import { logger } from "../tui/utils/logger.js";
 import type {
-  ToolStartEvent,
-  ToolEndEvent,
-  ToolErrorEvent,
+	ToolStartEvent,
+	ToolEndEvent,
+	ToolErrorEvent,
 } from "../tui/components/ToolEventView.js";
 
 export type UsageMetrics = {
-  inputTokens: number;
-  outputTokens: number;
-  totalTokens: number;
-  durationMs: number;
-  cacheReadInputTokens: number;
-  cacheCreationInputTokens: number;
-  totalCostUsd: number;
+	inputTokens: number;
+	outputTokens: number;
+	totalTokens: number;
+	durationMs: number;
+	cacheReadInputTokens: number;
+	cacheCreationInputTokens: number;
+	totalCostUsd: number;
 };
 
 export type QueryCallbacks = {
-  onToolStart?: (event: ToolStartEvent) => void;
-  onToolEnd?: (event: ToolEndEvent) => void;
-  onToolError?: (event: ToolErrorEvent) => void;
-  onText?: (text: string) => void;
-  onComplete?: (answer: string) => void;
-  onError?: (error: string) => void;
+	onToolStart?: (event: ToolStartEvent) => void;
+	onToolEnd?: (event: ToolEndEvent) => void;
+	onToolError?: (event: ToolErrorEvent) => void;
+	onText?: (text: string) => void;
+	onComplete?: (answer: string) => void;
+	onError?: (error: string) => void;
 };
 
 export type QueryResult = {
-  answer: string;
-  sessionId?: string;
-  usage?: UsageMetrics;
+	answer: string;
+	sessionId?: string;
+	usage?: UsageMetrics;
 };
 
-export async function runQuery(
-  prompt: string,
-  callbacks: QueryCallbacks = {},
-  options: { model?: string; sessionId?: string; signal?: AbortSignal } = {}
-): Promise<QueryResult> {
-  getDb();
-  logger.info('starting query', { model: options.model, sessionId: options.sessionId });
+// ─── Persistent session ────────────────────────────────────────────────────
 
-  const mcpServer = createSdkMcpServer({
-    name: "claimguard",
-    version: "0.1.0",
-    tools: allTools,
-  });
+let session: Session | null = null;
 
-  const q = query({
-    prompt,
-    options: {
-      systemPrompt: SYSTEM_PROMPT,
-      tools: [],
-      mcpServers: {
-        claimguard: mcpServer,
-      },
-      maxTurns: 20,
-      permissionMode: "bypassPermissions",
-      allowDangerouslySkipPermissions: true,
-      model: options.model ?? "claude-sonnet-4-5-20250929",
-      persistSession: true,
-      ...(options.sessionId ? { resume: options.sessionId } : {}),
-    },
-  });
+function createModel(): AzureResponsesModel {
+	const endpoint = process.env.AZURE_ENDPOINT;
+	const apiKey = process.env.AZURE_API_KEY;
+	const deployment = process.env.AZURE_DEPLOYMENT ?? "gpt-5.2-codex";
 
-  let resultText = "";
-  let sessionId: string | undefined;
-  let lastToolName = "";
-  let lastToolArgs: Record<string, unknown> = {};
-  let toolStartTime = 0;
-  let lastToolResult = "";
-  let usage: UsageMetrics | undefined;
+	if (!endpoint || !apiKey) {
+		throw new Error("AZURE_ENDPOINT and AZURE_API_KEY must be set");
+	}
 
-  for await (const message of q) {
-    if (options.signal?.aborted) break;
-
-    // Capture session ID from any message
-    if ("session_id" in message && message.session_id) {
-      sessionId = message.session_id;
-    }
-
-    if (message.type === "assistant") {
-      const content = message.message.content;
-      if (Array.isArray(content)) {
-        for (const block of content) {
-          if (block.type === "text") {
-            resultText += block.text;
-            callbacks.onText?.(block.text);
-          } else if (block.type === "tool_use") {
-            if (lastToolName && toolStartTime) {
-              callbacks.onToolEnd?.({
-                type: "tool_end",
-                tool: lastToolName,
-                args: lastToolArgs,
-                result: lastToolResult,
-                duration: Date.now() - toolStartTime,
-              });
-              lastToolResult = "";
-            }
-
-            lastToolName = block.name;
-            lastToolArgs = (block.input as Record<string, unknown>) ?? {};
-            toolStartTime = Date.now();
-            logger.debug(`tool call: ${block.name}`, lastToolArgs);
-
-            callbacks.onToolStart?.({
-              type: "tool_start",
-              tool: block.name,
-              args: lastToolArgs,
-            });
-          }
-        }
-      }
-    } else if (message.type === "user") {
-      // capture tool results from user messages (tool_result content blocks)
-      const msg = message as Record<string, unknown>;
-      const inner = msg.message as Record<string, unknown> | undefined;
-      const content = inner?.content;
-      if (Array.isArray(content)) {
-        for (const block of content) {
-          if (block.type === "tool_result") {
-            const resultContent = block.content;
-            if (typeof resultContent === "string") {
-              lastToolResult = resultContent;
-            } else if (Array.isArray(resultContent)) {
-              const textBlock = resultContent.find(
-                (c: { type: string }) => c.type === "text"
-              );
-              if (textBlock?.text) lastToolResult = textBlock.text;
-            }
-
-            // fire onToolEnd now if we have a pending tool
-            if (lastToolName && toolStartTime) {
-              callbacks.onToolEnd?.({
-                type: "tool_end",
-                tool: lastToolName,
-                args: lastToolArgs,
-                result: lastToolResult,
-                duration: Date.now() - toolStartTime,
-              });
-              lastToolName = "";
-              lastToolArgs = {};
-              toolStartTime = 0;
-              lastToolResult = "";
-            }
-          }
-        }
-      }
-    } else if (message.type === "tool_progress") {
-      if (lastToolName && toolStartTime) {
-        callbacks.onToolEnd?.({
-          type: "tool_end",
-          tool: lastToolName,
-          args: lastToolArgs,
-          result: lastToolResult,
-          duration: Date.now() - toolStartTime,
-        });
-        lastToolName = "";
-        lastToolArgs = {};
-        toolStartTime = 0;
-        lastToolResult = "";
-      }
-    } else if (message.type === "result") {
-      if (lastToolName && toolStartTime) {
-        callbacks.onToolEnd?.({
-          type: "tool_end",
-          tool: lastToolName,
-          args: lastToolArgs,
-          result: lastToolResult,
-          duration: Date.now() - toolStartTime,
-        });
-        lastToolName = "";
-        lastToolArgs = {};
-        toolStartTime = 0;
-        lastToolResult = "";
-      }
-
-      const msg = message as Record<string, unknown>;
-      const modelUsage = msg.modelUsage as Record<string, Record<string, number>> | undefined;
-
-      if (modelUsage) {
-        let inputTokens = 0;
-        let outputTokens = 0;
-        let cacheRead = 0;
-        let cacheCreate = 0;
-        for (const mu of Object.values(modelUsage)) {
-          inputTokens += mu.inputTokens ?? 0;
-          outputTokens += mu.outputTokens ?? 0;
-          cacheRead += mu.cacheReadInputTokens ?? 0;
-          cacheCreate += mu.cacheCreationInputTokens ?? 0;
-        }
-        usage = {
-          inputTokens,
-          outputTokens,
-          totalTokens: inputTokens + outputTokens,
-          durationMs: (msg.duration_ms as number) ?? 0,
-          cacheReadInputTokens: cacheRead,
-          cacheCreationInputTokens: cacheCreate,
-          totalCostUsd: (msg.total_cost_usd as number) ?? 0,
-        };
-      }
-
-      if (message.subtype === "success") {
-        resultText = message.result;
-      } else {
-        const errorMsg =
-          "errors" in message ? message.errors.join(", ") : "query failed";
-        callbacks.onError?.(errorMsg);
-      }
-    }
-  }
-
-  callbacks.onComplete?.(resultText);
-  if (usage) {
-    logger.info('query complete', {
-      tokens: usage.totalTokens,
-      duration: `${Math.round(usage.durationMs / 1000)}s`,
-      cost: `$${usage.totalCostUsd.toFixed(4)}`,
-    });
-  }
-  return { answer: resultText, sessionId, usage };
+	return new AzureResponsesModel({
+		endpoint,
+		apiKey,
+		deployment,
+	});
 }
 
+function getOrCreateSession(callbacks: QueryCallbacks): Session {
+	if (session) return session;
+
+	const model = createModel();
+
+	// Track tool timing for hooks
+	const toolTimers = new Map<string, number>();
+
+	session = createSession({
+		model,
+		instructions: SYSTEM_PROMPT,
+		tools: allTools,
+		maxTurns: 5000,
+		modelSettings: {
+			maxTokens: 128000,
+		},
+		hooks: {
+			beforeToolCall: ({ toolCall }) => {
+				const name = toolCall.function.name;
+				toolTimers.set(toolCall.id, Date.now());
+
+				let args: Record<string, unknown> = {};
+				try {
+					args = JSON.parse(toolCall.function.arguments);
+				} catch {
+					// leave empty
+				}
+
+				callbacks.onToolStart?.({
+					type: "tool_start",
+					tool: name,
+					args,
+				});
+			},
+
+			afterToolCall: ({ toolCall, result }) => {
+				const name = toolCall.function.name;
+				const startTime = toolTimers.get(toolCall.id) ?? Date.now();
+				toolTimers.delete(toolCall.id);
+
+				let args: Record<string, unknown> = {};
+				try {
+					args = JSON.parse(toolCall.function.arguments);
+				} catch {
+					// leave empty
+				}
+
+				callbacks.onToolEnd?.({
+					type: "tool_end",
+					tool: name,
+					args,
+					result,
+					duration: Date.now() - startTime,
+				});
+			},
+		},
+	});
+
+	return session;
+}
+
+export function clearSession(): void {
+	if (session) {
+		session.close();
+		session = null;
+	}
+}
+
+export function getSessionId(): string | undefined {
+	return session?.id;
+}
+
+// ─── Query ─────────────────────────────────────────────────────────────────
+
+export async function runQuery(
+	prompt: string,
+	callbacks: QueryCallbacks = {},
+	options: { signal?: AbortSignal } = {},
+): Promise<QueryResult> {
+	logger.info("starting query", { deployment: process.env.AZURE_DEPLOYMENT });
+
+	const sess = getOrCreateSession(callbacks);
+	const startTime = Date.now();
+	let resultText = "";
+
+	// Send the user message into the session (appends to history)
+	sess.send(prompt);
+
+	// Track tool calls from stream events for arg accumulation
+	const pendingTools = new Map<
+		string,
+		{ name: string; args: string; startTime: number }
+	>();
+
+	try {
+		for await (const event of sess.stream({ signal: options.signal })) {
+			if (options.signal?.aborted) break;
+
+			switch (event.type) {
+				case "content_delta": {
+					resultText += event.content;
+					callbacks.onText?.(event.content);
+					break;
+				}
+
+				case "tool_call_start": {
+					const { id, name } = event.toolCall;
+					pendingTools.set(id, {
+						name,
+						args: "",
+						startTime: Date.now(),
+					});
+					break;
+				}
+
+				case "tool_call_delta": {
+					const pending = pendingTools.get(event.toolCallId);
+					if (pending) {
+						pending.args += event.arguments;
+					}
+					break;
+				}
+
+				case "tool_call_done": {
+					pendingTools.delete(event.toolCallId);
+					break;
+				}
+
+				case "done": {
+					pendingTools.clear();
+					break;
+				}
+			}
+		}
+
+		// Await the final RunResult for usage
+		const runResult = await sess.result;
+		const finalOutput = runResult.output ?? resultText;
+		const durationMs = Date.now() - startTime;
+
+		let usage: UsageMetrics | undefined;
+		if (runResult.usage) {
+			const u = runResult.usage;
+			usage = {
+				inputTokens: u.promptTokens,
+				outputTokens: u.completionTokens,
+				totalTokens: u.totalTokens,
+				durationMs,
+				cacheReadInputTokens: u.cacheReadTokens ?? 0,
+				cacheCreationInputTokens: u.cacheCreationTokens ?? 0,
+				totalCostUsd: runResult.totalCostUsd ?? 0,
+			};
+		}
+
+		callbacks.onComplete?.(finalOutput);
+
+		if (usage) {
+			logger.info("query complete", {
+				tokens: usage.totalTokens,
+				duration: `${Math.round(usage.durationMs / 1000)}s`,
+				turns: runResult.numTurns,
+				messages: sess.messages.length,
+			});
+		}
+
+		return { answer: finalOutput, sessionId: sess.id, usage };
+	} catch (err) {
+		const msg = err instanceof Error ? err.message : String(err);
+		callbacks.onError?.(msg);
+		throw err;
+	}
+}

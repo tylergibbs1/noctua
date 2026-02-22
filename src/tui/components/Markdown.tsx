@@ -12,7 +12,7 @@ chalk.level = 3;
 
 marked.use(markedTerminal({
   reflowText: true,
-  width: 80,
+  width: process.stdout.columns || 120,
   tab: 2,
   showSectionPrefix: false,
   strong: chalk.hex(theme.fg.primary).bold,

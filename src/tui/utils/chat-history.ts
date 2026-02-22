@@ -14,10 +14,10 @@ interface HistoryFile {
   messages: ConversationEntry[];
 }
 
-const HISTORY_PATH = join(homedir(), '.claimguard', 'chat_history.json');
+const HISTORY_PATH = join(homedir(), '.noctua', 'chat_history.json');
 
 /**
- * Persistent conversation history stored in ~/.claimguard/chat_history.json
+ * Persistent conversation history stored in ~/.noctua/chat_history.json
  * Stack ordering — most recent at index 0
  */
 export class ChatHistory {

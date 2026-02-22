@@ -1,35 +1,30 @@
 {
-  "name": "claimguard",
-  "version": "0.1.0",
-  "description": "Autonomous medical billing denial prediction agent",
+  "name": "noctua",
+  "version": "0.2.0",
+  "description": "AI-powered scraper and data acquisition agent",
   "type": "module",
   "bin": {
-    "claimguard": "src/index.ts"
+    "noctua": "src/index.ts"
   },
   "scripts": {
-    "setup": "bun run scripts/setup.ts",
     "dev": "bun run src/index.ts",
-    "sync": "bun run src/sync/index.ts",
-    "eval": "bun run src/evals/run.ts",
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {
-    "@anthropic-ai/claude-agent-sdk": "^0.1.1",
-    "adm-zip": "^0.5.16",
+    "stratus-sdk": "file:../stratus",
     "chalk": "^5.6.2",
     "commander": "^13.0.0",
-    "csv-parse": "^5.6.0",
     "ink": "^6.0.0",
     "ink-spinner": "^5.0.0",
     "marked": "^17.0.1",
     "marked-terminal": "^7.3.0",
+    "playwright": "^1.52.0",
     "react": "^19.0.0",
-    "zod": "^4.0.0-beta.0"
+    "zod": "^4.0.0"
   },
   "devDependencies": {
     "@types/bun": "^1.2.0",
     "@types/react": "^19.0.0",
-    "@types/adm-zip": "^0.5.7",
     "typescript": "^5.7.0"
   }
 }

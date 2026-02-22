@@ -115,7 +115,7 @@ export function Input({ onSubmit, placeholder, onHistoryUp, onHistoryDown }: Inp
     >
       <Box paddingX={1}>
         <Text color={theme.accent.primary} bold>
-          {'> '}
+          {'>  '}
         </Text>
         {text ? (
           <CursorText text={text} cursorPosition={cursorPosition} />
