@@ -6,4 +6,8 @@ dist/
 .DS_Store
 .breadcrumbs.json
 screenshot*.png
+# generated scraper output
+*.csv
 court_scraper.py
+tx_cpa_*.json
+tx_cpa_*.py
