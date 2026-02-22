@@ -2,8 +2,7 @@ import { Agent, createSession, type Session } from "stratus-sdk";
 import { AzureResponsesModel } from "stratus-sdk";
 import type { StreamEvent } from "stratus-sdk";
 import { SYSTEM_PROMPT } from "./system-prompt.js";
-import { coderTools } from "./tools/index.js";
-import { createSubagents } from "./subagents.js";
+import { createSubagents, setSubagentEventCallback } from "./subagents.js";
 import { readFileTool, writeFileTool, listDirectoryTool, globFilesTool } from "./tools/files.js";
 import { bashTool } from "./tools/bash.js";
 import { grepTool } from "./tools/grep.js";
@@ -12,6 +11,7 @@ import type {
 	ToolStartEvent,
 	ToolEndEvent,
 	ToolErrorEvent,
+	SubagentInnerEvent,
 } from "../tui/components/ToolEventView.js";
 
 export type UsageMetrics = {
@@ -28,6 +28,7 @@ export type QueryCallbacks = {
 	onToolStart?: (event: ToolStartEvent) => void;
 	onToolEnd?: (event: ToolEndEvent) => void;
 	onToolError?: (event: ToolErrorEvent) => void;
+	onSubagentInnerEvent?: (agentName: string, event: SubagentInnerEvent) => void;
 	onText?: (text: string) => void;
 	onComplete?: (answer: string) => void;
 	onError?: (error: string) => void;
@@ -64,6 +65,11 @@ function getOrCreateSession(callbacks: QueryCallbacks): Session {
 
 	const model = createModel();
 	const { scraperSubagent, coderSubagent } = createSubagents(model);
+
+	// Wire subagent inner events to TUI
+	setSubagentEventCallback((agentName, event) => {
+		callbacks.onSubagentInnerEvent?.(agentName, event);
+	});
 
 	// Track tool timing for hooks
 	const toolTimers = new Map<string, number>();

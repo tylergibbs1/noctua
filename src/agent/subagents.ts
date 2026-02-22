@@ -2,12 +2,66 @@ import { z } from "zod";
 import { Agent, subagent } from "stratus-sdk";
 import type { Model } from "stratus-sdk";
 import { scraperTools, coderTools } from "./tools/index.js";
+import type { SubagentInnerEvent } from "../tui/components/ToolEventView.js";
+
+export type SubagentEventCallback = (
+	agentName: string,
+	event: SubagentInnerEvent,
+) => void;
+
+let onInnerEvent: SubagentEventCallback | undefined;
+
+export function setSubagentEventCallback(cb: SubagentEventCallback | undefined) {
+	onInnerEvent = cb;
+}
+
+function makeInnerHooks(agentName: string) {
+	const toolTimers = new Map<string, number>();
+
+	return {
+		beforeToolCall: ({ toolCall }: { toolCall: { id: string; function: { name: string; arguments: string } } }) => {
+			toolTimers.set(toolCall.id, Date.now());
+
+			let args: Record<string, unknown> = {};
+			try {
+				args = JSON.parse(toolCall.function.arguments);
+			} catch {
+				// leave empty
+			}
+
+			onInnerEvent?.(agentName, {
+				tool: toolCall.function.name,
+				args,
+			});
+		},
+
+		afterToolCall: ({ toolCall, result }: { toolCall: { id: string; function: { name: string; arguments: string } }; result: string }) => {
+			const startTime = toolTimers.get(toolCall.id) ?? Date.now();
+			toolTimers.delete(toolCall.id);
+
+			let args: Record<string, unknown> = {};
+			try {
+				args = JSON.parse(toolCall.function.arguments);
+			} catch {
+				// leave empty
+			}
+
+			onInnerEvent?.(agentName, {
+				tool: toolCall.function.name,
+				args,
+				result: result.slice(0, 80),
+				duration: Date.now() - startTime,
+			});
+		},
+	};
+}
 
 export function createSubagents(model: Model) {
 	const scraperAgent = new Agent({
 		name: "scraper",
 		model,
 		tools: scraperTools,
+		hooks: makeInnerHooks("scraper"),
 		instructions: `You are a web scraper subagent. You browse websites, interact with forms, and extract structured data.
 
 Your job:
@@ -29,6 +83,7 @@ Rules:
 		name: "coder",
 		model,
 		tools: coderTools,
+		hooks: makeInnerHooks("coder"),
 		instructions: `You are a code-writing subagent. You write scripts, scrapers, and data processing pipelines.
 
 Your job:

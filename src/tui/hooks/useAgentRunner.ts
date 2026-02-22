@@ -6,8 +6,11 @@ import type {
 	ToolStartEvent,
 	ToolEndEvent,
 	ToolErrorEvent,
+	SubagentInnerEvent,
 } from "../components/ToolEventView.js";
 import type { WorkingState } from "../components/WorkingIndicator.js";
+
+const SUBAGENT_TOOLS = new Set(["delegate_scraping", "delegate_coding"]);
 
 export type HistoryItemStatus =
 	| "processing"
@@ -57,7 +60,9 @@ export function useAgentRunner(_opts: Record<string, unknown> = {}) {
 
 			setHistory((prev) => [...prev, newItem]);
 
-			const updateItem = (updater: (item: HistoryItem) => HistoryItem) => {
+			const updateItem = (
+				updater: (item: HistoryItem) => HistoryItem,
+			) => {
 				setHistory((prev) =>
 					prev.map((item) =>
 						item.id === itemId ? updater(item) : item,
@@ -75,7 +80,21 @@ export function useAgentRunner(_opts: Record<string, unknown> = {}) {
 								...item,
 								events: [
 									...item.events,
-									{ id: toolId, event, completed: false },
+									{
+										id: toolId,
+										event,
+										completed: false,
+										innerEvents: SUBAGENT_TOOLS.has(
+											event.tool,
+										)
+											? []
+											: undefined,
+										innerToolCount: SUBAGENT_TOOLS.has(
+											event.tool,
+										)
+											? 0
+											: undefined,
+									},
 								],
 								activeToolId: toolId,
 							}));
@@ -95,10 +114,16 @@ export function useAgentRunner(_opts: Record<string, unknown> = {}) {
 										de.event.type === "tool_start" &&
 										de.event.tool === event.tool
 									) {
+										// Copy inner events to the end event for display after completion
+										const endEvent: ToolEndEvent = {
+											...event,
+											innerEvents: de.innerEvents,
+											innerToolCount: de.innerToolCount,
+										};
 										events[i] = {
 											...de,
 											completed: true,
-											endEvent: event,
+											endEvent,
 										};
 										break;
 									}
@@ -137,6 +162,65 @@ export function useAgentRunner(_opts: Record<string, unknown> = {}) {
 								};
 							});
 							setWorkingState({ status: "thinking" });
+						},
+						onSubagentInnerEvent: (
+							_agentName: string,
+							innerEvent: SubagentInnerEvent,
+						) => {
+							updateItem((item) => {
+								const events = [...item.events];
+								// Find the active (non-completed) subagent event
+								for (
+									let i = events.length - 1;
+									i >= 0;
+									i--
+								) {
+									const de = events[i];
+									if (
+										de &&
+										!de.completed &&
+										de.event.type === "tool_start" &&
+										SUBAGENT_TOOLS.has(de.event.tool)
+									) {
+										const innerEvents = [
+											...(de.innerEvents ?? []),
+										];
+										// If this is an afterToolCall (has result), update the last matching entry
+										if (innerEvent.result !== undefined) {
+											for (
+												let j = innerEvents.length - 1;
+												j >= 0;
+												j--
+											) {
+												if (
+													innerEvents[j]!.tool ===
+														innerEvent.tool &&
+													innerEvents[j]!.result ===
+														undefined
+												) {
+													innerEvents[j] =
+														innerEvent;
+													break;
+												}
+											}
+										} else {
+											innerEvents.push(innerEvent);
+										}
+
+										events[i] = {
+											...de,
+											innerEvents,
+											innerToolCount:
+												(de.innerToolCount ?? 0) +
+												(innerEvent.result !== undefined
+													? 1
+													: 0),
+										};
+										break;
+									}
+								}
+								return { ...item, events };
+							});
 						},
 						onText: () => {
 							setWorkingState({

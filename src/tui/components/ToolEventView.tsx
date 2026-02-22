@@ -61,6 +61,8 @@ const TOOL_PROGRESS: Record<string, string> = {
 	grep: "searching files",
 };
 
+const SUBAGENT_TOOLS = new Set(["delegate_scraping", "delegate_coding"]);
+
 function formatToolName(name: string): string {
 	if (TOOL_LABELS[name]) return TOOL_LABELS[name]!;
 	return name.replace(/_/g, " ");
@@ -86,7 +88,15 @@ function formatArgs(args: Record<string, unknown>): string {
 
 function formatDuration(ms: number): string {
 	if (ms < 1000) return `${ms}ms`;
-	return `${(ms / 1000).toFixed(1)}s`;
+	if (ms < 60000) return `${(ms / 1000).toFixed(1)}s`;
+	const mins = Math.floor(ms / 60000);
+	const secs = Math.round((ms % 60000) / 1000);
+	return `${mins}m ${secs}s`;
+}
+
+function formatTokens(tokens: number): string {
+	if (tokens < 1000) return `${tokens}`;
+	return `${(tokens / 1000).toFixed(1)}k`;
 }
 
 function truncateResult(result: string, maxLength = 100): string {
@@ -95,6 +105,13 @@ function truncateResult(result: string, maxLength = 100): string {
 }
 
 // ─── Event types ───────────────────────────────────────────────────────────
+
+export interface SubagentInnerEvent {
+	tool: string;
+	args: Record<string, unknown>;
+	result?: string;
+	duration?: number;
+}
 
 export interface ToolStartEvent {
 	type: "tool_start";
@@ -108,6 +125,10 @@ export interface ToolEndEvent {
 	args: Record<string, unknown>;
 	result: string;
 	duration: number;
+	// Subagent stats
+	innerEvents?: SubagentInnerEvent[];
+	innerToolCount?: number;
+	innerTokens?: number;
 }
 
 export interface ToolErrorEvent {
@@ -123,6 +144,9 @@ export interface DisplayEvent {
 	event: ToolEvent;
 	completed?: boolean;
 	endEvent?: ToolEvent;
+	// Live subagent inner events (updated while running)
+	innerEvents?: SubagentInnerEvent[];
+	innerToolCount?: number;
 }
 
 // ─── View components ───────────────────────────────────────────────────────
@@ -131,30 +155,81 @@ interface ToolStartViewProps {
 	tool: string;
 	args: Record<string, unknown>;
 	isActive?: boolean;
+	innerEvents?: SubagentInnerEvent[];
+	innerToolCount?: number;
 }
 
 export function ToolStartView({
 	tool,
 	args,
 	isActive = false,
+	innerEvents,
+	innerToolCount,
 }: ToolStartViewProps) {
+	const isSubagent = SUBAGENT_TOOLS.has(tool);
 	const progressMsg = TOOL_PROGRESS[tool] || "working";
+
 	return (
 		<Box flexDirection="column">
 			<Box>
 				<Text color={theme.accent.secondary}>{"\u23FA"}{"  "}</Text>
-				<Text color={theme.fg.primary}>{formatToolName(tool)}</Text>
-				{Object.keys(args).length > 0 && (
+				<Text color={theme.fg.primary} bold={isSubagent}>
+					{formatToolName(tool)}
+				</Text>
+				{isSubagent && innerToolCount !== undefined && innerToolCount > 0 && (
+					<Text color={theme.fg.muted}>
+						{" "}{"\u00b7"} {innerToolCount} tool use{innerToolCount !== 1 ? "s" : ""}
+					</Text>
+				)}
+				{!isSubagent && Object.keys(args).length > 0 && (
 					<Text color={theme.fg.muted}>({formatArgs(args)})</Text>
 				)}
 			</Box>
-			{isActive && (
+			{isActive && !isSubagent && (
 				<Box marginLeft={2}>
 					<Text color={theme.fg.muted}>{"\u23BF"}  </Text>
 					<Text color={theme.accent.primary}>
 						<Spinner type="dots" />
 					</Text>
 					<Text color={theme.fg.secondary}> {progressMsg}</Text>
+				</Box>
+			)}
+			{isActive && isSubagent && innerEvents && innerEvents.length > 0 && (
+				<Box flexDirection="column" marginLeft={4}>
+					{innerEvents.slice(-5).map((inner, i) => (
+						<Box key={i}>
+							<Text color={theme.fg.muted}>{"\u251C\u2500"} </Text>
+							<Text color={theme.fg.secondary}>
+								{formatToolName(inner.tool)}
+							</Text>
+							{inner.result && (
+								<Text color={theme.fg.muted}>
+									{" "}{"\u00b7"} {truncateResult(inner.result, 40)}
+								</Text>
+							)}
+							{inner.duration !== undefined && (
+								<Text color={theme.fg.muted}>
+									{" "}{"\u00b7"} {formatDuration(inner.duration)}
+								</Text>
+							)}
+						</Box>
+					))}
+					<Box>
+						<Text color={theme.fg.muted}>{"\u2514\u2500"} </Text>
+						<Text color={theme.accent.primary}>
+							<Spinner type="dots" />
+						</Text>
+						<Text color={theme.fg.secondary}> {progressMsg}</Text>
+					</Box>
+				</Box>
+			)}
+			{isActive && isSubagent && (!innerEvents || innerEvents.length === 0) && (
+				<Box marginLeft={4}>
+					<Text color={theme.fg.muted}>{"\u2514\u2500"} </Text>
+					<Text color={theme.accent.primary}>
+						<Spinner type="dots" />
+					</Text>
+					<Text color={theme.fg.secondary}> starting</Text>
 				</Box>
 			)}
 		</Box>
@@ -166,9 +241,21 @@ interface ToolEndViewProps {
 	args: Record<string, unknown>;
 	result: string;
 	duration: number;
+	innerEvents?: SubagentInnerEvent[];
+	innerToolCount?: number;
+	innerTokens?: number;
 }
 
-export function ToolEndView({ tool, args, result, duration }: ToolEndViewProps) {
+export function ToolEndView({
+	tool,
+	args,
+	result,
+	duration,
+	innerEvents,
+	innerToolCount,
+	innerTokens,
+}: ToolEndViewProps) {
+	const isSubagent = SUBAGENT_TOOLS.has(tool);
 	let summary = "done";
 
 	if (result) {
@@ -187,11 +274,61 @@ export function ToolEndView({ tool, args, result, duration }: ToolEndViewProps) 
 			} else if (parsed.exitCode !== undefined) {
 				summary = parsed.exitCode === 0 ? "success" : `exit ${parsed.exitCode}`;
 			} else {
-				summary = truncateResult(result, 50);
+				summary = truncateResult(result, 60);
 			}
 		} catch {
-			summary = truncateResult(result, 50);
+			summary = truncateResult(result, 60);
 		}
+	}
+
+	if (isSubagent) {
+		return (
+			<Box flexDirection="column">
+				<Box>
+					<Text color={theme.accent.secondary}>{"\u23FA"}{"  "}</Text>
+					<Text color={theme.fg.primary} bold>
+						{formatToolName(tool)}
+					</Text>
+					{innerToolCount !== undefined && innerToolCount > 0 && (
+						<Text color={theme.fg.muted}>
+							{" "}{"\u00b7"} {innerToolCount} tool use{innerToolCount !== 1 ? "s" : ""}
+						</Text>
+					)}
+					{innerTokens !== undefined && innerTokens > 0 && (
+						<Text color={theme.fg.muted}>
+							{" "}{"\u00b7"} {formatTokens(innerTokens)} tokens
+						</Text>
+					)}
+					<Text color={theme.fg.muted}> {"\u00b7"} {formatDuration(duration)}</Text>
+				</Box>
+				{innerEvents && innerEvents.length > 0 && (
+					<Box flexDirection="column" marginLeft={4}>
+						{innerEvents.slice(-8).map((inner, i) => (
+							<Box key={i}>
+								<Text color={theme.fg.muted}>{"\u251C\u2500"} </Text>
+								<Text color={theme.fg.secondary}>
+									{formatToolName(inner.tool)}
+								</Text>
+								{inner.result && (
+									<Text color={theme.fg.muted}>
+										{" "}{"\u00b7"} {truncateResult(inner.result, 40)}
+									</Text>
+								)}
+								{inner.duration !== undefined && (
+									<Text color={theme.fg.muted}>
+										{" "}{"\u00b7"} {formatDuration(inner.duration)}
+									</Text>
+								)}
+							</Box>
+						))}
+					</Box>
+				)}
+				<Box marginLeft={4}>
+					<Text color={theme.fg.muted}>{"\u2514\u2500"} </Text>
+					<Text color={theme.fg.secondary}>{summary}</Text>
+				</Box>
+			</Box>
+		);
 	}
 
 	return (
@@ -247,7 +384,6 @@ export function EventListView({ events, activeToolId }: EventListViewProps) {
 			{events.map((displayEvent) => {
 				const { id, event, completed, endEvent } = displayEvent;
 
-				// Completed tool — show end state
 				if (
 					event.type === "tool_start" &&
 					completed &&
@@ -260,6 +396,9 @@ export function EventListView({ events, activeToolId }: EventListViewProps) {
 								args={(event as ToolStartEvent).args}
 								result={endEvent.result}
 								duration={endEvent.duration}
+								innerEvents={endEvent.innerEvents}
+								innerToolCount={endEvent.innerToolCount}
+								innerTokens={endEvent.innerTokens}
 							/>
 						</Box>
 					);
@@ -280,7 +419,6 @@ export function EventListView({ events, activeToolId }: EventListViewProps) {
 					);
 				}
 
-				// Active tool — show spinner
 				if (event.type === "tool_start") {
 					return (
 						<Box key={id} marginBottom={1}>
@@ -288,6 +426,8 @@ export function EventListView({ events, activeToolId }: EventListViewProps) {
 								tool={event.tool}
 								args={event.args}
 								isActive={!completed && id === activeToolId}
+								innerEvents={displayEvent.innerEvents}
+								innerToolCount={displayEvent.innerToolCount}
 							/>
 						</Box>
 					);
