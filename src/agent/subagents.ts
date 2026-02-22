@@ -113,7 +113,7 @@ Rules:
 				),
 		}),
 		mapInput: (params: { task: string }) => params.task,
-		maxTurns: 50,
+		maxTurns: 1000,
 	});
 
 	const coderSubagent = subagent({
@@ -129,7 +129,7 @@ Rules:
 				),
 		}),
 		mapInput: (params: { task: string }) => params.task,
-		maxTurns: 30,
+		maxTurns: 1000,
 	});
 
 	return { scraperSubagent, coderSubagent };
