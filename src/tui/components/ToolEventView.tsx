@@ -4,6 +4,8 @@ import Spinner from "ink-spinner";
 import { theme } from "../theme.js";
 
 const TOOL_LABELS: Record<string, string> = {
+	delegate_scraping: "scraper",
+	delegate_coding: "coder",
 	web_crawl: "crawl",
 	web_navigate: "navigate",
 	web_wait: "wait",
@@ -31,6 +33,8 @@ const TOOL_LABELS: Record<string, string> = {
 };
 
 const TOOL_PROGRESS: Record<string, string> = {
+	delegate_scraping: "scraping",
+	delegate_coding: "writing code",
 	web_crawl: "crawling page",
 	web_navigate: "loading page",
 	web_wait: "waiting",

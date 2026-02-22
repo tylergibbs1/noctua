@@ -1,8 +1,12 @@
-import { createSession, type Session } from "stratus-sdk";
+import { Agent, createSession, type Session } from "stratus-sdk";
 import { AzureResponsesModel } from "stratus-sdk";
 import type { StreamEvent } from "stratus-sdk";
 import { SYSTEM_PROMPT } from "./system-prompt.js";
-import { allTools } from "./tools/index.js";
+import { coderTools } from "./tools/index.js";
+import { createSubagents } from "./subagents.js";
+import { readFileTool, writeFileTool, listDirectoryTool, globFilesTool } from "./tools/files.js";
+import { bashTool } from "./tools/bash.js";
+import { grepTool } from "./tools/grep.js";
 import { logger } from "../tui/utils/logger.js";
 import type {
 	ToolStartEvent,
@@ -59,18 +63,28 @@ function getOrCreateSession(callbacks: QueryCallbacks): Session {
 	if (session) return session;
 
 	const model = createModel();
+	const { scraperSubagent, coderSubagent } = createSubagents(model);
 
 	// Track tool timing for hooks
 	const toolTimers = new Map<string, number>();
 
+	// Orchestrator has direct tools for simple tasks + subagents for heavy lifting
 	session = createSession({
 		model,
 		instructions: SYSTEM_PROMPT,
-		tools: allTools,
+		tools: [
+			bashTool,
+			readFileTool,
+			writeFileTool,
+			listDirectoryTool,
+			globFilesTool,
+			grepTool,
+		],
+		subagents: [scraperSubagent, coderSubagent],
 		maxTurns: 5000,
 		modelSettings: {
 			maxTokens: 128000,
-			promptCacheKey: "noctua-session",
+			promptCacheKey: "noctua-orchestrator",
 		},
 		hooks: {
 			beforeToolCall: ({ toolCall }) => {
@@ -107,8 +121,26 @@ function getOrCreateSession(callbacks: QueryCallbacks): Session {
 					type: "tool_end",
 					tool: name,
 					args,
-					result,
+					result: result.slice(0, 200),
 					duration: Date.now() - startTime,
+				});
+			},
+
+			onSubagentStart: ({ subagent: sa }) => {
+				callbacks.onToolStart?.({
+					type: "tool_start",
+					tool: sa.toolName,
+					args: {},
+				});
+			},
+
+			onSubagentStop: ({ subagent: sa, result }) => {
+				callbacks.onToolEnd?.({
+					type: "tool_end",
+					tool: sa.toolName,
+					args: {},
+					result: result.slice(0, 200),
+					duration: 0,
 				});
 			},
 		},
@@ -141,10 +173,8 @@ export async function runQuery(
 	const startTime = Date.now();
 	let resultText = "";
 
-	// Send the user message into the session (appends to history)
 	sess.send(prompt);
 
-	// Track tool calls from stream events for arg accumulation
 	const pendingTools = new Map<
 		string,
 		{ name: string; args: string; startTime: number }
@@ -191,12 +221,10 @@ export async function runQuery(
 			}
 		}
 
-		// Await the final RunResult for usage
 		const runResult = await sess.result;
 		let finalOutput = runResult.output ?? resultText;
 		const durationMs = Date.now() - startTime;
 
-		// Detect silent exit — model hit token limit without producing a text response
 		if (!finalOutput.trim() && runResult.finishReason === "length") {
 			finalOutput =
 				"ran out of context space before finishing — try `/new` to start a fresh session, or ask a more targeted question";
