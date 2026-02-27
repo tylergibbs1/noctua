@@ -1,6 +1,7 @@
 import { useState, useCallback, useRef } from "react";
 import { runQuery } from "../../agent/session.js";
 import type { UsageMetrics } from "../../agent/session.js";
+import type { PipelineEvent, PipelineStage } from "../../pipeline/state.js";
 import type {
 	DisplayEvent,
 	ToolStartEvent,
@@ -11,6 +12,42 @@ import type {
 import type { WorkingState } from "../components/WorkingIndicator.js";
 
 const SUBAGENT_TOOLS = new Set(["delegate_scraping", "delegate_coding"]);
+
+// ─── Pipeline progress tracking ────────────────────────────────────────
+
+export type StageStatus = "pending" | "running" | "done" | "failed";
+
+export type StageInfo = {
+	stage: PipelineStage;
+	status: StageStatus;
+	summary?: string;
+	startedAt?: number;
+	durationMs?: number;
+	activeTool?: string;
+};
+
+export type PipelineProgress = {
+	active: boolean;
+	stages: StageInfo[];
+	startTime: number;
+	targetUrl?: string;
+};
+
+const PIPELINE_STAGES: PipelineStage[] = ["recon", "schema", "codegen", "test", "repair", "harden"];
+
+function createInitialProgress(): PipelineProgress {
+	return {
+		active: true,
+		stages: PIPELINE_STAGES.map((stage) => ({ stage, status: "pending" as StageStatus })),
+		startTime: Date.now(),
+	};
+}
+
+const INACTIVE_PROGRESS: PipelineProgress = {
+	active: false,
+	stages: [],
+	startTime: 0,
+};
 
 export type HistoryItemStatus =
 	| "processing"
@@ -35,6 +72,7 @@ export function useAgentRunner(_opts: Record<string, unknown> = {}) {
 	});
 	const [isProcessing, setIsProcessing] = useState(false);
 	const [error, setError] = useState<string | null>(null);
+	const [pipelineProgress, setPipelineProgress] = useState<PipelineProgress>(INACTIVE_PROGRESS);
 	const eventCounterRef = useRef(0);
 	const abortControllerRef = useRef<AbortController | null>(null);
 
@@ -222,6 +260,86 @@ export function useAgentRunner(_opts: Record<string, unknown> = {}) {
 								return { ...item, events };
 							});
 						},
+						onPipelineEvent: (event: PipelineEvent) => {
+							setPipelineProgress((prev) => {
+								const progress = prev.active ? prev : createInitialProgress();
+								const now = Date.now();
+								switch (event.type) {
+									case "stage_start":
+										return {
+											...progress,
+											stages: progress.stages.map((s) =>
+												s.stage === event.stage
+													? { ...s, status: "running" satisfies StageStatus, startedAt: now }
+													: s,
+											),
+										};
+									case "stage_complete":
+										return {
+											...progress,
+											stages: progress.stages.map((s) =>
+												s.stage === event.stage
+													? {
+															...s,
+															status: "done" satisfies StageStatus,
+															summary: event.summary,
+															durationMs: s.startedAt ? now - s.startedAt : undefined,
+														}
+													: s,
+											),
+										};
+									case "stage_error":
+										return {
+											...progress,
+											stages: progress.stages.map((s) =>
+												s.stage === event.stage
+													? {
+															...s,
+															status: "failed" satisfies StageStatus,
+															durationMs: s.startedAt ? now - s.startedAt : undefined,
+														}
+													: s,
+											),
+										};
+									case "stage_tool_start":
+										return {
+											...progress,
+											stages: progress.stages.map((s) =>
+												s.stage === event.stage
+													? { ...s, activeTool: event.tool }
+													: s,
+											),
+										};
+									case "stage_tool_end":
+										return {
+											...progress,
+											stages: progress.stages.map((s) =>
+												s.stage === event.stage
+													? { ...s, activeTool: undefined }
+													: s,
+											),
+										};
+									case "pipeline_complete":
+										return { ...progress, active: false };
+									case "pipeline_failed":
+										return {
+											...progress,
+											active: false,
+											stages: progress.stages.map((s) =>
+												s.status === "running"
+													? {
+															...s,
+															status: "failed" satisfies StageStatus,
+															durationMs: s.startedAt ? now - s.startedAt : undefined,
+														}
+													: s,
+											),
+										};
+									default:
+										return progress;
+								}
+							});
+						},
 						onText: () => {
 							setWorkingState({
 								status: "answering",
@@ -284,5 +402,6 @@ export function useAgentRunner(_opts: Record<string, unknown> = {}) {
 		executeQuery,
 		cancelExecution,
 		clearHistory,
+		pipelineProgress,
 	};
 }

@@ -4,6 +4,25 @@ import Spinner from 'ink-spinner';
 import { theme } from '../theme.js';
 import { getRandomThinkingVerb } from '../utils/thinking-verbs.js';
 
+/**
+ * Hex color blending for cosine shimmer.
+ * t=0 → base color, t=1 → highlight color.
+ */
+function blendHex(base: string, highlight: string, t: number): string {
+  const b = parseInt(base.slice(1), 16);
+  const h = parseInt(highlight.slice(1), 16);
+  const br = (b >> 16) & 0xff, bg = (b >> 8) & 0xff, bb = b & 0xff;
+  const hr = (h >> 16) & 0xff, hg = (h >> 8) & 0xff, hb = h & 0xff;
+  const r = Math.round(br + (hr - br) * t);
+  const g = Math.round(bg + (hg - bg) * t);
+  const bv = Math.round(bb + (hb - bb) * t);
+  return `#${((r << 16) | (g << 8) | bv).toString(16).padStart(6, '0')}`;
+}
+
+const BAND_HALF_WIDTH = 5;
+const SWEEP_DURATION = 2000; // ms
+const PAUSE_DURATION = 2000; // ms between sweeps
+
 function ShineText({ text, color, shineColor }: { text: string; color: string; shineColor: string }) {
   const [shinePos, setShinePos] = useState(0);
   const [isPaused, setIsPaused] = useState(false);
@@ -13,20 +32,20 @@ function ShineText({ text, color, shineColor }: { text: string; color: string; s
       const timeout = setTimeout(() => {
         setShinePos(0);
         setIsPaused(false);
-      }, 2000);
+      }, PAUSE_DURATION);
       return () => clearTimeout(timeout);
     }
 
+    const startTime = Date.now();
     const interval = setInterval(() => {
-      setShinePos((prev) => {
-        const next = prev + 1;
-        if (next >= text.length) {
-          setIsPaused(true);
-          return prev;
-        }
-        return next;
-      });
-    }, 30);
+      const elapsed = Date.now() - startTime;
+      const pos = (elapsed / SWEEP_DURATION) * (text.length + BAND_HALF_WIDTH * 2) - BAND_HALF_WIDTH;
+      if (pos >= text.length + BAND_HALF_WIDTH) {
+        setIsPaused(true);
+        return;
+      }
+      setShinePos(pos);
+    }, 16); // ~60fps for smooth gradient
 
     return () => clearInterval(interval);
   }, [isPaused, text.length]);
@@ -34,9 +53,16 @@ function ShineText({ text, color, shineColor }: { text: string; color: string; s
   const parts = useMemo(() => {
     const result: React.ReactNode[] = [];
     for (let i = 0; i < text.length; i++) {
-      const isShine = !isPaused && Math.abs(i - shinePos) < 1.25;
+      let charColor = color;
+      if (!isPaused) {
+        const dist = Math.abs(i - shinePos);
+        if (dist < BAND_HALF_WIDTH) {
+          const t = 0.5 * (1 + Math.cos(Math.PI * dist / BAND_HALF_WIDTH));
+          charColor = blendHex(color, shineColor, t);
+        }
+      }
       result.push(
-        <Text key={i} color={isShine ? shineColor : color}>
+        <Text key={i} color={charColor}>
           {text[i]}
         </Text>
       );
@@ -87,7 +113,7 @@ export function WorkingIndicator({ state }: WorkingIndicatorProps) {
     }, 1000);
 
     return () => clearInterval(interval);
-  }, [state]);
+  }, [state.status, state.status === 'answering' ? state.startTime : 0]);
 
   if (state.status === 'idle') {
     return null;

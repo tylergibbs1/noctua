@@ -1,8 +1,9 @@
-import React, { useCallback, useEffect, useRef } from "react";
-import { Box, Text, useApp, useInput } from "ink";
+import React, { useCallback, useEffect, useMemo, useRef } from "react";
+import { Box, Static, Text, useApp, useInput } from "ink";
 import { Intro } from "./components/Intro.js";
 import { EventListView } from "./components/ToolEventView.js";
 import { WorkingIndicator } from "./components/WorkingIndicator.js";
+import { PipelineView } from "./components/PipelineView.js";
 import { Input } from "./components/Input.js";
 import { Markdown } from "./components/Markdown.js";
 import { useAgentRunner } from "./hooks/useAgentRunner.js";
@@ -120,7 +121,7 @@ export function App({ debug }: Props) {
 		null,
 	);
 
-	const { history, workingState, isProcessing, error, executeQuery, cancelExecution, clearHistory } =
+	const { history, workingState, isProcessing, error, executeQuery, cancelExecution, clearHistory, pipelineProgress } =
 		useAgentRunner({});
 
 	const { navigateUp, navigateDown, saveMessage, updateAgentResponse, resetNavigation } =
@@ -140,6 +141,41 @@ export function App({ debug }: Props) {
 		}
 	}, [history, updateAgentResponse]);
 
+	// Scrollback promotion: split history into promoted (completed → Static)
+	// and live (in-progress → viewport). Static items are rendered once into
+	// terminal scrollback and never re-rendered, keeping the viewport small.
+	const promotedRef = useRef<Set<string>>(new Set());
+	const { promoted, live } = useMemo(() => {
+		const promoted: HistoryItem[] = [];
+		const live: HistoryItem[] = [];
+		for (const item of history) {
+			const isDone = item.status !== "processing";
+			if (isDone && !promotedRef.current.has(item.id)) {
+				promotedRef.current.add(item.id);
+			}
+			if (promotedRef.current.has(item.id)) {
+				promoted.push(item);
+			} else {
+				live.push(item);
+			}
+		}
+		return { promoted, live };
+	}, [history]);
+
+	const hasActiveSubagent = useMemo(
+		() => live.some(
+			(item) =>
+				item.status === "processing" &&
+				item.events.some(
+					(de) =>
+						!de.completed &&
+						de.event.type === "tool_start" &&
+						(de.event.tool === "delegate_scraping" || de.event.tool === "delegate_coding"),
+				),
+		),
+		[live],
+	);
+
 	const handleSubmit = useCallback(
 		(queryText: string) => {
 			const trimmed = queryText.trim().toLowerCase();
@@ -154,6 +190,7 @@ export function App({ debug }: Props) {
 			if (trimmed === "/new") {
 				clearHistory();
 				clearSession();
+				promotedRef.current.clear();
 				setSystemMessage("session cleared \u2014 starting fresh");
 				return;
 			}
@@ -189,53 +226,63 @@ export function App({ debug }: Props) {
 	});
 
 	return (
-		<Box flexDirection="column" padding={1} width="100%">
-			{/* intro */}
-			<Intro />
+		<>
+			{/* Scrollback: completed items rendered once, pushed to terminal scrollback */}
+			<Static items={promoted}>
+				{(item: HistoryItem) => (
+					<Box key={item.id} flexDirection="column" paddingX={1} marginBottom={1}>
+						<HistoryItemView item={item} />
+					</Box>
+				)}
+			</Static>
 
-			{/* history */}
-			{history.map((item) => (
-				<HistoryItemView key={item.id} item={item} />
-			))}
+			{/* Live viewport: only in-progress items + chrome */}
+			<Box flexDirection="column" padding={1} width="100%">
+				{/* intro — only show if nothing has been promoted yet */}
+				{promoted.length === 0 && !pipelineProgress.active && <Intro />}
 
-			{/* system message */}
-			{systemMessage && (
-				<Box marginBottom={1}>
-					<Text color={theme.accent.secondary}>{systemMessage}</Text>
-				</Box>
-			)}
+				{/* pipeline view — replaces intro, tool events, and input during pipeline */}
+				{pipelineProgress.active ? (
+					<PipelineView progress={pipelineProgress} />
+				) : (
+					<>
+						{/* in-progress history items */}
+						{live.map((item) => (
+							<HistoryItemView key={item.id} item={item} />
+						))}
 
-			{/* error */}
-			{error && (
-				<Box marginBottom={1}>
-					<Text color={theme.accent.primary}>error: {error}</Text>
-				</Box>
-			)}
+						{/* system message */}
+						{systemMessage && (
+							<Box marginBottom={1}>
+								<Text color={theme.accent.secondary}>{systemMessage}</Text>
+							</Box>
+						)}
 
-			{/* working indicator — hide when a subagent is active (it has its own spinner) */}
-			{isProcessing && !history.some(
-				(item) =>
-					item.status === "processing" &&
-					item.events.some(
-						(de) =>
-							!de.completed &&
-							de.event.type === "tool_start" &&
-							(de.event.tool === "delegate_scraping" || de.event.tool === "delegate_coding"),
-					),
-			) && <WorkingIndicator state={workingState} />}
+						{/* error */}
+						{error && (
+							<Box marginBottom={1}>
+								<Text color={theme.accent.primary}>error: {error}</Text>
+							</Box>
+						)}
 
-			{/* input */}
-			<Box marginTop={1}>
-				<Input
-					onSubmit={handleSubmit}
-					placeholder="ask me to scrape, search, or process data"
-					onHistoryUp={navigateUp}
-					onHistoryDown={navigateDown}
-				/>
+						{/* working indicator — hide when a subagent is active */}
+						{isProcessing && !hasActiveSubagent && <WorkingIndicator state={workingState} />}
+
+						{/* input */}
+						<Box marginTop={1}>
+							<Input
+								onSubmit={handleSubmit}
+								placeholder="ask me to scrape, search, or process data"
+								onHistoryUp={navigateUp}
+								onHistoryDown={navigateDown}
+							/>
+						</Box>
+					</>
+				)}
+
+				{/* debug panel */}
+				<DebugPanel show={debug === true} />
 			</Box>
-
-			{/* debug panel */}
-			<DebugPanel show={debug === true} />
-		</Box>
+		</>
 	);
 }

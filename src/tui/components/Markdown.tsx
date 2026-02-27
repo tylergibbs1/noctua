@@ -1,4 +1,4 @@
-import React from "react";
+import React, { useMemo } from "react";
 import { Text } from "ink";
 import chalk from "chalk";
 import { marked } from "marked";
@@ -34,8 +34,25 @@ type Props = {
  * - Ensure blank line before list blocks
  * - Convert markdown tables to box-drawing tables
  */
+// Hoisted static regexes — avoid allocating on every render
+const BARE_URL_RE = /(?<!\]\(|<)(https?:\/\/[^\s)\]>]+)/g;
+const BULLET_RE = /^(\s*)\* /gm;
+const BOLD_RE = /\*\*([^*]+)\*\*/g;
+const ITALIC_RE = /(?<!\*)\*([^*]+)\*(?!\*)/g;
+
+/**
+ * Convert bare URLs to markdown links so marked-terminal renders them
+ * as single styled spans instead of splitting them across lines during reflow.
+ */
+function protectUrls(text: string): string {
+  return text.replace(BARE_URL_RE, (url) => `[${url}](${url})`);
+}
+
 function preprocess(raw: string): string {
   let text = raw;
+
+  // protect bare URLs from being split across lines during reflow
+  text = protectUrls(text);
 
   // transform markdown tables to box-drawing before marked touches them
   text = transformMarkdownTables(text);
@@ -74,22 +91,21 @@ function preprocess(raw: string): string {
  */
 function postprocess(rendered: string): string {
   let text = rendered;
-  // replace * bullets with • first — prevents italic regex matching list markers
-  text = text.replace(/^(\s*)\* /gm, '$1\u2022 ');
-  // bold fallback — marked-terminal misses inline bold in list items on marked v17
-  text = text.replace(/\*\*([^*]+)\*\*/g, (_, inner) =>
+  text = text.replace(BULLET_RE, '$1\u2022 ');
+  text = text.replace(BOLD_RE, (_, inner) =>
     chalk.hex(theme.fg.primary).bold(inner)
   );
-  // italic fallback
-  text = text.replace(/(?<!\*)\*([^*]+)\*(?!\*)/g, (_, inner) =>
+  text = text.replace(ITALIC_RE, (_, inner) =>
     chalk.hex(theme.fg.secondary).italic(inner)
   );
   return text;
 }
 
 export function Markdown({ children }: Props) {
-  const processed = preprocess(children);
-  const rendered = marked.parse(processed);
-  const text = typeof rendered === "string" ? postprocess(rendered.trim()) : children;
+  const text = useMemo(() => {
+    const processed = preprocess(children);
+    const rendered = marked.parse(processed);
+    return typeof rendered === "string" ? postprocess(rendered.trim()) : children;
+  }, [children]);
   return <Text>{text}</Text>;
 }

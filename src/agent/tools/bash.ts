@@ -13,6 +13,7 @@ export const bashTool = tool({
 	parameters: z.object({
 		command: z.string().describe("Shell command to execute"),
 	}),
+	timeout: 30000,
 	execute: async (_ctx, { command }, options) => {
 		const proc = Bun.spawn(["bash", "-c", command], {
 			stdout: "pipe",

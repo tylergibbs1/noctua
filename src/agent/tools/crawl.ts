@@ -19,6 +19,7 @@ export const webCrawlTool = tool({
 				"Optional CSS selector to scope extraction (e.g. 'main', 'article', '.content')",
 			),
 	}),
+	timeout: 30000,
 	execute: async (_ctx, { url, selector }, options) => {
 		const selectorArg = selector ? `--css-selector "${selector}"` : "";
 		const cmd = `crwl ${JSON.stringify(url)} -o markdown --bypass-cache ${selectorArg} 2>&1`;

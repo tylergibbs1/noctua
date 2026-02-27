@@ -26,6 +26,9 @@ import {
 } from "./files.js";
 import { grepTool } from "./grep.js";
 import { webCrawlTool } from "./crawl.js";
+import { webProbeTool } from "./probe.js";
+import { webInterceptApiTool } from "./intercept.js";
+import { scraperTestTool, scraperLintTool } from "./scraper-test.js";
 
 // Web + shell tools for the scraper subagent
 export const scraperTools = [
@@ -46,6 +49,8 @@ export const scraperTools = [
 	webHandleDialogTool,
 	webTabsTool,
 	webCloseTool,
+	webProbeTool,
+	webInterceptApiTool,
 	bashTool,
 	writeFileTool,
 ];

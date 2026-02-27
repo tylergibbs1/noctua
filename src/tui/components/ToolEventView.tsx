@@ -6,6 +6,11 @@ import { theme } from "../theme.js";
 const TOOL_LABELS: Record<string, string> = {
 	delegate_scraping: "subagent: scraper",
 	delegate_coding: "subagent: coder",
+	delegate_pipeline: "pipeline: build scraper",
+	web_probe: "probe page",
+	web_intercept_api: "intercept APIs",
+	scraper_test: "test scraper",
+	scraper_lint: "lint scraper",
 	web_crawl: "crawl",
 	web_navigate: "navigate",
 	web_wait: "wait",
@@ -35,6 +40,11 @@ const TOOL_LABELS: Record<string, string> = {
 const TOOL_PROGRESS: Record<string, string> = {
 	delegate_scraping: "scraping",
 	delegate_coding: "writing code",
+	delegate_pipeline: "building scraper (recon → schema → codegen → test → harden)",
+	web_probe: "analyzing page structure",
+	web_intercept_api: "recording API calls",
+	scraper_test: "testing scraper",
+	scraper_lint: "checking code quality",
 	web_crawl: "crawling page",
 	web_navigate: "loading page",
 	web_wait: "waiting",
@@ -61,7 +71,7 @@ const TOOL_PROGRESS: Record<string, string> = {
 	grep: "searching files",
 };
 
-const SUBAGENT_TOOLS = new Set(["delegate_scraping", "delegate_coding"]);
+const SUBAGENT_TOOLS = new Set(["delegate_scraping", "delegate_coding", "delegate_pipeline"]);
 
 function formatToolName(name: string): string {
 	if (TOOL_LABELS[name]) return TOOL_LABELS[name]!;
