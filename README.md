@@ -175,4 +175,4 @@ src/
 
 ## license
 
-MIT — Tyler Gibbs
+[MIT](LICENSE) — Tyler Gibbs
